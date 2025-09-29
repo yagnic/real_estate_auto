@@ -24,24 +24,24 @@ def show_auth_status():
         else:
             st.sidebar.warning("Authentication Required")
             
-            if st.sidebar.button("Authenticate Now"):
-                with st.spinner("Authenticating..."):
-                    if auth.authenticate():
-                        st.sidebar.success("Authentication successful!")
-                        st.rerun()
-                    else:
-                        st.sidebar.error("Authentication failed")
+            # Show authenticate button
+            if st.sidebar.button("Authenticate Now", key="auth_button_sidebar"):
+                # This will trigger the device flow
+                st.session_state.start_auth = True
+            
+            # If auth started, show device flow in main area (not sidebar)
+            if st.session_state.get('start_auth') or st.session_state.get('device_flow'):
+                auth.authenticate()
         
         # Add clear token option
         if token_info['has_token']:
-            if st.sidebar.button("Clear Saved Token"):
+            if st.sidebar.button("Clear Saved Token", key="clear_token_button"):
                 auth.clear_saved_token()
                 st.sidebar.success("Token cleared")
                 st.rerun()
         
     except Exception as e:
         st.sidebar.error(f"Auth error: {e}")
-
 def require_authentication():
     """Decorator-like function to require authentication for operations"""
     
