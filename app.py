@@ -75,32 +75,195 @@ class RealEstateApp:
         """Main application"""
         # Show auth status
         show_auth_status()
-        
+    
         if not require_authentication():
             st.title("🏢 Real Estate Deal Processor")
             auth = Authenticator()
-            auth.authenticate()  # Show auth UI
+            auth.authenticate()
             return
-            
-        # Sidebar navigation
+        
         st.sidebar.title("Navigation")
         page = st.sidebar.radio(
             "Go to",
-            ["Dashboard", "Pending Deals", "Approved Deals", "Automation", "Settings"]
+            ["Dashboard", "Pending Deals", "Approved Deals", "Assumptions", "Automation", "Settings"]  # Added Assumptions
         )
         
-        # Render selected page
         if page == "Dashboard":
             self.render_dashboard()
         elif page == "Pending Deals":
             self.render_pending_deals()
         elif page == "Approved Deals":
             self.render_approved_deals()
+        elif page == "Assumptions":
+            self.render_assumptions()  # New page
         elif page == "Automation":
             self.render_automation()
         elif page == "Settings":
             self.render_settings()
-    
+
+    def render_assumptions(self):
+        """Assumptions management page"""
+        st.title("⚙️ Deal Assumptions")
+        
+        from assumptions import AssumptionsLoader
+        
+        csv_path = "Assumptions.csv"
+        
+        # Check if file exists
+        if not os.path.exists(csv_path):
+            st.error(f"Assumptions file not found: {csv_path}")
+            st.info("Please upload an Assumptions.csv file")
+            
+            uploaded_file = st.file_uploader("Upload Assumptions CSV", type=['csv'])
+            if uploaded_file:
+                with open(csv_path, 'wb') as f:
+                    f.write(uploaded_file.getbuffer())
+                st.success("File uploaded successfully!")
+                st.rerun()
+            return
+        
+        # Load assumptions
+        try:
+            loader = AssumptionsLoader(csv_path)
+            df = loader.assumptions_data
+            
+            if df is None:
+                st.error("Failed to load assumptions")
+                return
+            
+            # Tabs for different views
+            tab1, tab2, tab3 = st.tabs(["📊 View Assumptions", "✏️ Edit Assumptions", "📤 Upload New File"])
+            
+            with tab1:
+                st.subheader("Current Assumptions")
+                
+                # Deal type selector
+                deal_types = loader.get_deal_types()
+                selected_deal_type = st.selectbox("Select Deal Type", deal_types)
+                
+                if selected_deal_type:
+                    st.write(f"### Assumptions for: {selected_deal_type}")
+                    
+                    # Get assumptions
+                    assumptions = loader.get_parsed_assumptions_for_deal_type(selected_deal_type)
+                    
+                    if assumptions:
+                        # Display in organized groups
+                        st.write("#### Duration")
+                        duration_items = {k: v for k, v in assumptions.items() if 'duration' in k.lower()}
+                        for key, value in duration_items.items():
+                            st.write(f"**{key}:** {value}")
+                        
+                        st.write("#### Costs & Fees")
+                        cost_items = {k: v for k, v in assumptions.items() if any(word in k.lower() for word in ['cost', 'fee', 'charge'])}
+                        for key, value in cost_items.items():
+                            st.write(f"**{key}:** {value}")
+                        
+                        st.write("#### Finance")
+                        finance_items = {k: v for k, v in assumptions.items() if 'finance' in k.lower() or 'loan' in k.lower() or 'ltv' in k.lower()}
+                        for key, value in finance_items.items():
+                            st.write(f"**{key}:** {value}")
+                        
+                        st.write("#### Other")
+                        other_items = {k: v for k, v in assumptions.items() if k not in duration_items and k not in cost_items and k not in finance_items}
+                        for key, value in other_items.items():
+                            st.write(f"**{key}:** {value}")
+                    else:
+                        st.info("No assumptions found for this deal type")
+            
+            with tab2:
+                st.subheader("Edit Assumptions")
+                
+                st.info("Edit the assumptions table below. Changes are saved when you click 'Save Changes'.")
+                
+                # Make dataframe editable
+                edited_df = st.data_editor(
+                    df,
+                    num_rows="dynamic",
+                    use_container_width=True,
+                    key="assumptions_editor"
+                )
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    if st.button("💾 Save Changes", type="primary"):
+                        try:
+                            # Save to CSV
+                            edited_df.to_csv(csv_path, index=False)
+                            st.success("Assumptions saved successfully!")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Error saving assumptions: {e}")
+                
+                with col2:
+                    if st.button("↩️ Reset Changes"):
+                        st.rerun()
+                
+                # Download current file
+                st.write("---")
+                st.write("**Download Current Assumptions**")
+                
+                csv_data = df.to_csv(index=False)
+                st.download_button(
+                    label="⬇️ Download CSV",
+                    data=csv_data,
+                    file_name="Assumptions.csv",
+                    mime="text/csv"
+                )
+            
+            with tab3:
+                st.subheader("Upload New Assumptions File")
+                
+                st.warning("Uploading a new file will replace the current assumptions. Make sure to download a backup first.")
+                
+                uploaded_file = st.file_uploader(
+                    "Choose a CSV file",
+                    type=['csv'],
+                    key="upload_assumptions"
+                )
+                
+                if uploaded_file:
+                    try:
+                        # Preview the uploaded file
+                        preview_df = pd.read_csv(uploaded_file)
+                        st.write("**Preview of uploaded file:**")
+                        st.dataframe(preview_df.head(10))
+                        
+                        if st.button("✅ Confirm Upload", type="primary"):
+                            # Save the file
+                            uploaded_file.seek(0)
+                            with open(csv_path, 'wb') as f:
+                                f.write(uploaded_file.getbuffer())
+                            st.success("New assumptions file uploaded successfully!")
+                            st.rerun()
+                    
+                    except Exception as e:
+                        st.error(f"Error reading uploaded file: {e}")
+            
+            # Statistics
+            st.write("---")
+            st.subheader("📈 Statistics")
+            
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.metric("Deal Types", len(loader.get_deal_types()))
+            
+            with col2:
+                st.metric("Assumption Categories", len(loader.get_assumption_categories()))
+            
+            with col3:
+                total_assumptions = sum(
+                    len(loader.get_all_assumptions_for_deal_type(dt))
+                    for dt in loader.get_deal_types()
+                )
+                st.metric("Total Assumptions", total_assumptions)
+        
+        except Exception as e:
+            st.error(f"Error loading assumptions: {e}")
+            st.exception(e)
+        
     def render_dashboard(self):
         """Dashboard with stats and overview"""
         st.title("🏢 Dashboard")

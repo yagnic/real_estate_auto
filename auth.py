@@ -1,37 +1,41 @@
 #!/usr/bin/env python3
 """
-Authentication module for Microsoft Graph API with token persistence
+Authentication module with Supabase token persistence
 """
 
 import os
-import json
-import pickle
 from datetime import datetime, timedelta
 from msal import PublicClientApplication
 from config import CLIENT_ID, AUTHORITY, SCOPES
-
+from supabase import create_client
 
 class Authenticator:
     def __init__(self):
         self.token = None
         self.refresh_token = None
         self.token_expires_at = None
-        self.token_file = "auth_token.pkl"
+        self.user_id = "default_user"  # Can be customized per user
         
         self.app = PublicClientApplication(
             client_id=CLIENT_ID,
             authority=AUTHORITY
         )
+        
+        # Initialize Supabase
+        try:
+            supabase_url = os.getenv('SUPABASE_URL')
+            supabase_key = os.getenv('SUPABASE_KEY')
+            self.supabase = create_client(supabase_url, supabase_key)
+        except Exception as e:
+            print(f"Warning: Could not initialize Supabase: {e}")
+            self.supabase = None
     
     def get_token(self) -> str:
         """Get authentication token, refreshing if necessary"""
-        # Try to load existing token
         if self._load_saved_token():
-            # Check if token is still valid
             if self._is_token_valid():
                 return self.token
         
-        # Token expired or doesn't exist, authenticate
         if self.authenticate():
             return self.token
         
@@ -41,7 +45,6 @@ class Authenticator:
         """Authenticate user and get access token"""
         print("Authenticating...")
         
-        # First try silent authentication with cached account
         accounts = self.app.get_accounts()
         if accounts:
             print("Found cached account, attempting silent authentication...")
@@ -51,7 +54,6 @@ class Authenticator:
                 self._save_token(result)
                 return True
         
-        # If silent auth fails, try interactive
         print("Silent authentication failed, opening browser...")
         result = self.app.acquire_token_interactive(SCOPES)
         
@@ -65,37 +67,47 @@ class Authenticator:
         return True
     
     def _save_token(self, result):
-        """Save token and refresh token to file"""
+        """Save token to Supabase"""
         self.token = result['access_token']
         self.refresh_token = result.get('refresh_token')
         
-        # Calculate expiry time
-        expires_in = result.get('expires_in', 3600)  # Default 1 hour
-        self.token_expires_at = datetime.now() + timedelta(seconds=expires_in - 300)  # 5 min buffer
+        expires_in = result.get('expires_in', 3600)
+        self.token_expires_at = datetime.now() + timedelta(seconds=expires_in - 300)
         
-        # Save to file
+        if not self.supabase:
+            print("Supabase not available, token not persisted")
+            return
+        
         token_data = {
+            'user_id': self.user_id,
             'access_token': self.token,
             'refresh_token': self.refresh_token,
             'expires_at': self.token_expires_at.isoformat(),
-            'saved_at': datetime.now().isoformat()
+            'updated_at': datetime.now().isoformat()
         }
         
         try:
-            with open(self.token_file, 'wb') as f:
-                pickle.dump(token_data, f)
-            print(f"Token saved to {self.token_file}")
+            # Upsert (insert or update)
+            self.supabase.table('auth_tokens').upsert(
+                token_data,
+                on_conflict='user_id'
+            ).execute()
+            print(f"Token saved to Supabase for user: {self.user_id}")
         except Exception as e:
-            print(f"Failed to save token: {e}")
+            print(f"Failed to save token to Supabase: {e}")
     
     def _load_saved_token(self) -> bool:
-        """Load token from saved file"""
-        if not os.path.exists(self.token_file):
+        """Load token from Supabase"""
+        if not self.supabase:
             return False
         
         try:
-            with open(self.token_file, 'rb') as f:
-                token_data = pickle.load(f)
+            response = self.supabase.table('auth_tokens').select('*').eq('user_id', self.user_id).execute()
+            
+            if not response.data or len(response.data) == 0:
+                return False
+            
+            token_data = response.data[0]
             
             self.token = token_data.get('access_token')
             self.refresh_token = token_data.get('refresh_token')
@@ -104,11 +116,11 @@ class Authenticator:
             if expires_at_str:
                 self.token_expires_at = datetime.fromisoformat(expires_at_str)
             
-            print("Loaded saved authentication token")
+            print("Loaded saved authentication token from Supabase")
             return True
             
         except Exception as e:
-            print(f"Failed to load saved token: {e}")
+            print(f"Failed to load saved token from Supabase: {e}")
             return False
     
     def _is_token_valid(self) -> bool:
@@ -116,7 +128,6 @@ class Authenticator:
         if not self.token or not self.token_expires_at:
             return False
         
-        # Check if token expires within next 5 minutes
         if datetime.now() >= self.token_expires_at:
             print("Token expired, need to refresh")
             return False
@@ -131,7 +142,6 @@ class Authenticator:
             return False
         
         try:
-            # Use refresh token to get new access token
             accounts = self.app.get_accounts()
             if accounts:
                 result = self.app.acquire_token_silent(SCOPES, account=accounts[0])
@@ -149,11 +159,13 @@ class Authenticator:
             return False
     
     def clear_saved_token(self):
-        """Clear saved token file"""
+        """Clear saved token from Supabase"""
+        if not self.supabase:
+            return
+        
         try:
-            if os.path.exists(self.token_file):
-                os.remove(self.token_file)
-                print("Saved token cleared")
+            self.supabase.table('auth_tokens').delete().eq('user_id', self.user_id).execute()
+            print("Saved token cleared from Supabase")
         except Exception as e:
             print(f"Error clearing token: {e}")
     
