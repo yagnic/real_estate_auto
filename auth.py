@@ -12,7 +12,7 @@ from supabase import create_client
 
 CLIENT_ID = os.getenv('OUTLOOK_CLIENT_ID')
 TENANT_ID = os.getenv('OUTLOOK_TENANT_ID')
-AUTHORITY = f"https://login.microsoftonline.com/{TENANT_ID}"
+AUTHORITY = f"https://login.microsoftonline.com/common"
 SCOPES = ['Mail.Read', 'Mail.Send']
 
 class Authenticator:
