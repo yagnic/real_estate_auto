@@ -43,29 +43,33 @@ class Authenticator:
         return None
     
     def authenticate(self) -> bool:
-        """Authenticate using device flow"""
-        
-        # Try silent auth first
-        accounts = self.app.get_accounts()
-        if accounts:
-            result = self.app.acquire_token_silent(SCOPES, account=accounts[0])
-            if result and "access_token" in result:
-                self._save_token(result)
-                return True
-        
-        # Start device flow
-        if st.session_state.device_flow is None:
+    """Authenticate using device flow"""
+    
+    # Try silent auth first
+    accounts = self.app.get_accounts()
+    if accounts:
+        result = self.app.acquire_token_silent(SCOPES, account=accounts[0])
+        if result and "access_token" in result:
+            self._save_token(result)
+            return True
+    
+    # Start device flow
+    if st.session_state.device_flow is None:
+        try:
             flow = self.app.initiate_device_flow(scopes=SCOPES)
             
             if "user_code" not in flow:
-                st.error("Failed to create device flow")
+                # Show the actual error from MSAL
+                error = flow.get('error_description', flow.get('error', 'Unknown error'))
+                st.error(f"Device flow failed: {error}")
+                st.info(f"Full response: {flow}")
                 return False
             
             st.session_state.device_flow = flow
             
             # Show instructions
             st.warning(f"""
-            ### 🔐 Authentication Required
+            ### Authentication Required
             
             **1.** Open: **https://microsoft.com/devicelogin**
             
@@ -77,24 +81,11 @@ class Authenticator:
             """)
             
             return False
-        
-        # Show continue button
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("✅ Continue", type="primary", key="auth_continue"):
-                result = self.app.acquire_token_by_device_flow(st.session_state.device_flow)
-                
-                if "access_token" in result:
-                    self._save_token(result)
-                    st.session_state.device_flow = None
-                    st.success("Authentication successful!")
-                    st.rerun()
-                    return True
-                else:
-                    error = result.get('error_description', 'Authentication failed')
-                    st.error(f"Failed: {error}")
-                    st.session_state.device_flow = None
-                    return False
+            
+        except Exception as e:
+            st.error(f"Error initiating device flow: {str(e)}")
+            st.info("Check your Azure AD app configuration")
+            return False
         
         with col2:
             if st.button("❌ Cancel", key="auth_cancel"):
