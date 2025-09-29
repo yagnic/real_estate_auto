@@ -43,57 +43,57 @@ class Authenticator:
         return None
     
     def authenticate(self) -> bool:
-    """Authenticate using device flow"""
-    
-    # Try silent auth first
-    accounts = self.app.get_accounts()
-    if accounts:
-        result = self.app.acquire_token_silent(SCOPES, account=accounts[0])
-        if result and "access_token" in result:
-            self._save_token(result)
-            return True
-    
-    # Start device flow
-    if st.session_state.device_flow is None:
-        try:
-            flow = self.app.initiate_device_flow(scopes=SCOPES)
-            
-            if "user_code" not in flow:
-                # Show the actual error from MSAL
-                error = flow.get('error_description', flow.get('error', 'Unknown error'))
-                st.error(f"Device flow failed: {error}")
-                st.info(f"Full response: {flow}")
+        """Authenticate using device flow"""
+        
+        # Try silent auth first
+        accounts = self.app.get_accounts()
+        if accounts:
+            result = self.app.acquire_token_silent(SCOPES, account=accounts[0])
+            if result and "access_token" in result:
+                self._save_token(result)
+                return True
+        
+        # Start device flow
+        if st.session_state.device_flow is None:
+            try:
+                flow = self.app.initiate_device_flow(scopes=SCOPES)
+                
+                if "user_code" not in flow:
+                    # Show the actual error from MSAL
+                    error = flow.get('error_description', flow.get('error', 'Unknown error'))
+                    st.error(f"Device flow failed: {error}")
+                    st.info(f"Full response: {flow}")
+                    return False
+                
+                st.session_state.device_flow = flow
+                
+                # Show instructions
+                st.warning(f"""
+                ### Authentication Required
+                
+                **1.** Open: **https://microsoft.com/devicelogin**
+                
+                **2.** Enter code: **`{flow['user_code']}`**
+                
+                **3.** Sign in with your Microsoft account
+                
+                **4.** Return here and click Continue
+                """)
+                
+                return False
+                
+            except Exception as e:
+                st.error(f"Error initiating device flow: {str(e)}")
+                st.info("Check your Azure AD app configuration")
                 return False
             
-            st.session_state.device_flow = flow
-            
-            # Show instructions
-            st.warning(f"""
-            ### Authentication Required
-            
-            **1.** Open: **https://microsoft.com/devicelogin**
-            
-            **2.** Enter code: **`{flow['user_code']}`**
-            
-            **3.** Sign in with your Microsoft account
-            
-            **4.** Return here and click Continue
-            """)
+            with col2:
+                if st.button("❌ Cancel", key="auth_cancel"):
+                    st.session_state.device_flow = None
+                    st.rerun()
             
             return False
-            
-        except Exception as e:
-            st.error(f"Error initiating device flow: {str(e)}")
-            st.info("Check your Azure AD app configuration")
-            return False
         
-        with col2:
-            if st.button("❌ Cancel", key="auth_cancel"):
-                st.session_state.device_flow = None
-                st.rerun()
-        
-        return False
-    
     def _save_token(self, result):
         """Save token to session"""
         token = result['access_token']
