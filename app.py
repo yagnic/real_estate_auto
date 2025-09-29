@@ -22,6 +22,21 @@ from template import *
 from dynamic_excel_generator import DealAppraisalExcelGenerator
 from auth_status import show_auth_status, require_authentication
 
+
+try:
+    for key, value in st.secrets.items():
+        if key not in os.environ:  # Don't override existing env vars
+            os.environ[key] = str(value)
+except (AttributeError, FileNotFoundError):
+    # No secrets file found (running locally with .env)
+    pass
+
+# Load .env file for local development
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 # Page config
 st.set_page_config(
     page_title="Real Estate Deal Processor",
