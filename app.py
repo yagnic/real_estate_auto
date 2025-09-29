@@ -21,6 +21,7 @@ from supabase_client import SupabaseDealsClient
 from template import *
 from dynamic_excel_generator import DealAppraisalExcelGenerator
 from auth_status import show_auth_status, require_authentication
+from auth import Authenticator
 
 
 try:
@@ -76,11 +77,11 @@ class RealEstateApp:
         show_auth_status()
         
         if not require_authentication():
-            st.warning("Please authenticate using the sidebar")
             st.title("🏢 Real Estate Deal Processor")
-            st.info("Authenticate to access the application")
+            auth = Authenticator()
+            auth.authenticate()  # Show auth UI
             return
-        
+            
         # Sidebar navigation
         st.sidebar.title("Navigation")
         page = st.sidebar.radio(
@@ -469,12 +470,12 @@ This is an automated analysis generated on {datetime.now().strftime('%Y-%m-%d at
                     'Content-Type': 'application/json'
                 }
                 
+                
                 response = requests.post(
                     'https://graph.microsoft.com/v1.0/me/sendMail',
                     headers=headers,
                     json=email_message
                 )
-                
                 if response.status_code == 202:
                     return True
                 else:
